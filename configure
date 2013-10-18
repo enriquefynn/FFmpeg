@@ -2184,6 +2184,7 @@ tcp_protocol_select="network"
 tls_protocol_deps_any="openssl gnutls"
 tls_protocol_select="tcp_protocol"
 udp_protocol_select="network"
+etcp_protocol_select="network"
 unix_protocol_deps="sys_un_h"
 unix_protocol_select="network"
 

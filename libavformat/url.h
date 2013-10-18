@@ -248,6 +248,10 @@ URLProtocol *ffurl_protocol_next(URLProtocol *prev);
 int ff_udp_set_remote_url(URLContext *h, const char *uri);
 int ff_udp_get_local_port(URLContext *h);
 
+/* etcp.c */
+int ff_etcp_set_remote_url(URLContext *h, const char *uri);
+int ff_etcp_get_local_port(URLContext *h);
+
 /**
  * Assemble a URL string from components. This is the reverse operation
  * of av_url_split.

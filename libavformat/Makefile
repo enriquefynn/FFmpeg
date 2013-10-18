@@ -459,6 +459,7 @@ OBJS-$(CONFIG_SRTP_PROTOCOL)             += srtpproto.o srtp.o
 OBJS-$(CONFIG_TCP_PROTOCOL)              += tcp.o
 OBJS-$(CONFIG_TLS_PROTOCOL)              += tls.o
 OBJS-$(CONFIG_UDP_PROTOCOL)              += udp.o
+OBJS-$(CONFIG_ETCP_PROTOCOL)             += etcp.o
 OBJS-$(CONFIG_UNIX_PROTOCOL)             += unix.o
 
 SKIPHEADERS-$(CONFIG_FFRTMPCRYPT_PROTOCOL) += rtmpdh.h
