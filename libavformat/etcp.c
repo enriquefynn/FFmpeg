@@ -17,12 +17,13 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Mr. Fynn <fynn@fr4c74l.com>
  */
 
 /**
  * @file
  *
- * Etcp socket url_protocol
+ * Etcp socket protocol
  *
  */
 
@@ -32,6 +33,8 @@
 #include "network.h"
 #include <sys/un.h>
 #include <linux/if_ether.h>
+#include <linux/if_packet.h>
+#include <sys/ioctl.h>
 #include <net/if.h>
 #include "url.h"
 
@@ -69,24 +72,49 @@ static int etcp_open(URLContext *h, const char *filename, int flags)
 {
     EtcpContext *s = h->priv_data;
     int i, fd, ret;
-	memset(&if_idx, 0, sizeof(struct ifreq));
+	char *interface = (char * ) malloc(40*sizeof(char));
+	struct ifreq ifr;
     av_strstart(filename, "etcp:", &filename);
-    //s->addr.sun_family = AF_ETCP;
-    //av_strlcpy(s->addr.sun_path, filename, sizeof(s->addr.sun_path));
+    s->addr.sll_family = AF_PACKET;
 
-    if ((fd = ff_socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)
+   	//Create raw socket 
+	if ((fd = ff_socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)
         return ff_neterrno();
-	sscanf(filename, "%02x%02x%02x%02x%02x%02x:%02x:%02x:%02x:%02x:%02x:%02x", 
-														(unsigned int *)&s->header[0], (unsigned int *)&s->header[1], (unsigned int *)&s->header[2], 
-														(unsigned int *)&s->header[3], (unsigned int *)&s->header[4], (unsigned int *)&s->header[5],
-														(unsigned int *)&s->header[6], (unsigned int *)&s->header[7], (unsigned int *)&s->header[8], 
-														(unsigned int *)&s->header[9], (unsigned int *)&s->header[10], (unsigned int *)&s->header[11]);
-	s->header[12] = 0x08;
+	//Append hash to header
+	sscanf(filename, "%02x%02x%02x%02x%02x%02x", (unsigned int *)&s->header[0], (unsigned int *)&s->header[1], (unsigned int *)&s->header[2], 
+												 (unsigned int *)&s->header[3], (unsigned int *)&s->header[4], (unsigned int *)&s->header[5]);
+	strcpy (interface, filename + 13);
+
+	s->addr.sll_ifindex = if_nametoindex(interface);
+	if (!s->addr.sll_ifindex)
+	{
+		perror("if_nametoindex() failed to obtain interface index");
+		goto fail;
+	}
+	printf("INTERFACE: %s, %d\n", interface, s->addr.sll_ifindex);
+	memset (&ifr, 0, sizeof (ifr));
+	snprintf (ifr.ifr_name, sizeof (ifr.ifr_name), "%s", interface);
+	//Get src MAC address
+	if (ioctl (fd, SIOCGIFHWADDR, &ifr) < 0)
+	{
+		perror("ioctl() failed to get source MAC address");
+		goto fail;
+	}
+	close(fd);
+	if ((fd = ff_socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)
+		return ff_neterrno();
+	//Fill the src mac
+	memcpy (s->header+6, ifr.ifr_hwaddr.sa_data, 6);
+	memcpy (s->addr.sll_addr, s->header + 6, 6);
+	s->addr.sll_halen = htons(6);
+
+	s->header[12] = 0x18;
 	s->header[13] = 0x80;
 	printf("HASH: ");
 	for (i = 0; i < 14; ++i)
 		printf("%x", s->header[i]);
 	printf("\n");
+
     if (s->listen) {
         fd = ff_listen_bind(fd, (struct sockaddr *)&s->addr,
                             sizeof(s->addr), s->timeout, h);
@@ -106,8 +134,8 @@ static int etcp_open(URLContext *h, const char *filename, int flags)
     return 0;
 
 fail:
-    if (s->listen && AVUNERROR(ret) != EADDRINUSE)
-        unlink(s->addr.sun_path);
+    //if (s->listen && AVUNERROR(ret) != EADDRINUSE)
+    //    unlink(s->addr.sun_path);
     if (fd >= 0)
         closesocket(fd);
     return ret;
@@ -115,9 +143,9 @@ fail:
 
 static int etcp_read(URLContext *h, uint8_t *buf, int size)
 {
-	printf("YOOOOOO: %d\n,", size);
     EtcpContext *s = h->priv_data;
     int ret;
+	printf("YOOOOOO: %d\n,", size);
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
         ret = ff_network_wait_fd(s->fd, 0);
@@ -132,7 +160,7 @@ static int etcp_write(URLContext *h, const uint8_t *buf, int size)
 {
     EtcpContext *s = h->priv_data;
 	uint8_t *frame;
-    int ret;
+    int ret, sending;
 	frame = (uint8_t *) malloc(size+14);
 	memcpy(frame, s->header, 14);
 	memcpy(frame+14, buf, size);
@@ -141,16 +169,34 @@ static int etcp_write(URLContext *h, const uint8_t *buf, int size)
         if (ret < 0)
             return ret;
     }
-    ret = sendto(s->fd, frame, size+14, (struct sockaddr*)&s->addr, sizeof(struct sockaddr_ll) < 0);
-	printf("YOOOOOO: %d %d\n,", size, ret);
+	sending = 1486;
+	while(sending < size)
+	{
+		memcpy(frame, s->header, 14);
+		memcpy(frame + 14, buf + sending, 1486);
+	    ret = sendto(s->fd, frame, 1500, 0, (struct sockaddr *)&s->addr, sizeof(s->addr));
+		if (ret == -1)
+			perror ("sendto() failed");
+		sending+=1486;
+	}
+	/*printf("YOOOOOO: %d %d\n", size, ret);
+    for (i = 0; i < 18; ++i)
+		printf("%x", frame[i]);
+	printf("\n");
+	printf("sll_ifindex: %d\nsll_family: %d\nsll_addr: ", s->addr.sll_ifindex, s->addr.sll_family);
+	for (i = 0; i < 6; ++i)
+		printf("%x", s->addr.sll_addr[i]);
+	printf("\n");
+	printf("sll_halen: %d\n", s->addr.sll_halen);
+	*/
     return ret < 0 ? ff_neterrno() : ret;
 }
 
 static int etcp_close(URLContext *h)
 {
     EtcpContext *s = h->priv_data;
-    if (s->listen)
-        unlink(s->addr.sun_path);
+    //if (s->listen)
+    //    unlink(s->addr.sun_path);
     closesocket(s->fd);
     return 0;
 }
