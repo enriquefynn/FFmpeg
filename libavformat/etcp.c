@@ -145,7 +145,7 @@ static int etcp_read(URLContext *h, uint8_t *buf, int size)
 {
     EtcpContext *s = h->priv_data;
     int ret;
-	printf("YOOOOOO: %d\n,", size);
+	//printf("YOOOOOO: %d\n,", size);
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
         ret = ff_network_wait_fd(s->fd, 0);
