@@ -151,9 +151,10 @@ static int etcp_read(URLContext *h, uint8_t *buf, int size)
     	ret = recv(s->fd, tmpbuf, 1500, 0);
 		if (!memcmp(s->header, tmpbuf, headerSize))
 		{
-//			printf("SIZE: %x %x %d\n", tmpbuf[15], tmpbuf[16], (tmpbuf[15] << 2) | tmpbuf[16]);
+			//printf("SIZE: %x %x %d\n", tmpbuf[15], tmpbuf[16], (tmpbuf[15] << 8) | tmpbuf[16]);
+
 			nSize += (tmpbuf[15] << 8) | tmpbuf[16];
-			memcpy(buf + tmpbuf[17], tmpbuf+headerSize+5, (tmpbuf[15] << 8) | tmpbuf[16]);
+			memcpy(buf + tmpbuf[17]*controlSize, tmpbuf+headerSize+5, (tmpbuf[15] << 8) | tmpbuf[16]);
 			if (!tmpbuf[18])
 				return nSize; 
 		}
