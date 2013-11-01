@@ -144,15 +144,43 @@ fail:
 static int etcp_read(URLContext *h, uint8_t *buf, int size)
 {
     EtcpContext *s = h->priv_data;
-    int ret;
-	//printf("YOOOOOO: %d\n,", size);
+    int ret, bytes, i;
+	uint8_t tmpbuf[1500];
+	printf("YOOOOOO: %d\n,", size);
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
+		printf("WAITING...\n");
         ret = ff_network_wait_fd(s->fd, 0);
         if (ret < 0)
             return ret;
     }
-    ret = recv(s->fd, buf, size, 0);
+	bytes = 0;
+	printf("AQUI DE NOVO\n");
+	while(bytes < size)
+	{
+		printf("%d\n", bytes);
+    	ret = recv(s->fd, tmpbuf, 1500, 0);
+		if (!memcmp(s->header, tmpbuf, 14))
+		{
+		printf("HEADER: ");
+            for (i = 0; i < 14; ++i)
+                    printf("%x", s->header[i]);
+                        printf("\n");
+
+		printf("HEADER: ");
+			for (i = 0; i < 14; ++i)
+			        printf("%x", tmpbuf[i]);
+					    printf("\n");
+			memcpy(buf+bytes, tmpbuf+14, 1486);
+			bytes+=1486;
+		}
+	}
+	recv(s->fd, tmpbuf, 90, 0);
+	if (!strncmp(s->header, tmpbuf, 14))
+		memcpy(buf+32692, tmpbuf+14, 76);
+	printf("SIZE: %d\n", ret);
+	if (ret > 0)
+		return ret;
     return ret < 0 ? ff_neterrno() : ret;
 }
 
@@ -169,26 +197,26 @@ static int etcp_write(URLContext *h, const uint8_t *buf, int size)
         if (ret < 0)
             return ret;
     }
-	sending = 1486;
+	sending = 0;
 	while(sending < size)
 	{
 		memcpy(frame, s->header, 14);
-		memcpy(frame + 14, buf + sending, 1486);
-	    ret = sendto(s->fd, frame, 1500, 0, (struct sockaddr *)&s->addr, sizeof(s->addr));
+		memcpy(frame + 14, buf + sending, (size < 1486) ? size: 1486);
+	    ret = sendto(s->fd, frame, (size < 1486) ? size+14 : 1500, 0, (struct sockaddr *)&s->addr, sizeof(s->addr));
 		if (ret == -1)
 			perror ("sendto() failed");
 		sending+=1486;
 	}
-	/*printf("YOOOOOO: %d %d\n", size, ret);
-    for (i = 0; i < 18; ++i)
-		printf("%x", frame[i]);
-	printf("\n");
-	printf("sll_ifindex: %d\nsll_family: %d\nsll_addr: ", s->addr.sll_ifindex, s->addr.sll_family);
-	for (i = 0; i < 6; ++i)
-		printf("%x", s->addr.sll_addr[i]);
-	printf("\n");
-	printf("sll_halen: %d\n", s->addr.sll_halen);
-	*/
+	if ((size > 1468) && (sending - size > 0))
+	{
+		memcpy(frame, s->header, 14);
+		memcpy(frame + 14, buf + (sending - 1486), size - (sending - 1486));
+		ret = sendto(s->fd, frame, sending - size, 0, (struct sockaddr *)&s->addr, sizeof(s->addr));
+		if (ret == -1)
+			perror ("sendto() failed");
+	}
+	if (ret > 0)
+		return size;
     return ret < 0 ? ff_neterrno() : ret;
 }
 
