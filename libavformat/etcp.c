@@ -22,7 +22,8 @@
 
 /**
  * @file
- *
+ * Format:
+ * Header (14b) + id (1b) + packetSize (2b) + offset(1b) + more (1b) + data (packetSize)
  * Etcp socket protocol
  *
  */
@@ -38,11 +39,14 @@
 #include <net/if.h>
 #include "url.h"
 
+#define headerSize 14
+#define controlSize 1481
 
 typedef struct EtcpContext {
     const AVClass *class;
     struct sockaddr_ll addr;
-	uint8_t header[14];
+	uint8_t header[headerSize];
+	uint8_t id;
     int timeout;
     int listen;
     int type;
@@ -71,8 +75,10 @@ static const AVClass etcp_class = {
 static int etcp_open(URLContext *h, const char *filename, int flags)
 {
     EtcpContext *s = h->priv_data;
+	//Init ID
+	s->id = 0x00;
     int i, fd, ret;
-	char *interface = (char * ) malloc(40*sizeof(char));
+	char interface[40];
 	struct ifreq ifr;
     av_strstart(filename, "etcp:", &filename);
     s->addr.sll_family = AF_PACKET;
@@ -103,32 +109,17 @@ static int etcp_open(URLContext *h, const char *filename, int flags)
 	close(fd);
 	if ((fd = ff_socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)
 		return ff_neterrno();
-	//Fill the src mac
+	//src mac
 	memcpy (s->header+6, ifr.ifr_hwaddr.sa_data, 6);
 	memcpy (s->addr.sll_addr, s->header + 6, 6);
 	s->addr.sll_halen = htons(6);
-
+	//Ethertype
 	s->header[12] = 0x18;
 	s->header[13] = 0x80;
 	printf("HASH: ");
-	for (i = 0; i < 14; ++i)
+	for (i = 0; i < headerSize; ++i)
 		printf("%x", s->header[i]);
 	printf("\n");
-
-    if (s->listen) {
-        fd = ff_listen_bind(fd, (struct sockaddr *)&s->addr,
-                            sizeof(s->addr), s->timeout, h);
-        if (fd < 0) {
-            ret = fd;
-            goto fail;
-        }
-    } else {
-        //ret = ff_listen_connect(fd, (struct sockaddr *)&s->addr,
-        //                        sizeof(s->addr), s->timeout, h, 0);
-		int ret = 1;
-        if (ret < 0)
-            goto fail;
-    }
 
     s->fd = fd;
     return 0;
@@ -143,81 +134,77 @@ fail:
 
 static int etcp_read(URLContext *h, uint8_t *buf, int size)
 {
+	//printf("SIZE: %d\n", size);
     EtcpContext *s = h->priv_data;
-    int ret, bytes, i;
+    int ret, i, nSize;
 	uint8_t tmpbuf[1500];
-	printf("YOOOOOO: %d\n,", size);
-
+	nSize = 0;
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
-		printf("WAITING...\n");
         ret = ff_network_wait_fd(s->fd, 0);
         if (ret < 0)
             return ret;
     }
-	bytes = 0;
-	printf("AQUI DE NOVO\n");
-	while(bytes < size)
+	nSize = 0;
+	//printf("AQUI DE NOVO\n");
+	while(1)
 	{
-		printf("%d\n", bytes);
     	ret = recv(s->fd, tmpbuf, 1500, 0);
-		if (!memcmp(s->header, tmpbuf, 14))
+		if (!memcmp(s->header, tmpbuf, headerSize))
 		{
-		printf("HEADER: ");
-            for (i = 0; i < 14; ++i)
-                    printf("%x", s->header[i]);
-                        printf("\n");
-
-		printf("HEADER: ");
-			for (i = 0; i < 14; ++i)
-			        printf("%x", tmpbuf[i]);
-					    printf("\n");
-			memcpy(buf+bytes, tmpbuf+14, 1486);
-			bytes+=1486;
+//			printf("SIZE: %x %x %d\n", tmpbuf[15], tmpbuf[16], (tmpbuf[15] << 2) | tmpbuf[16]);
+			nSize += (tmpbuf[15] << 8) | tmpbuf[16];
+			memcpy(buf + tmpbuf[17], tmpbuf+headerSize+5, (tmpbuf[15] << 8) | tmpbuf[16]);
+			if (!tmpbuf[18])
+				return nSize; 
 		}
 	}
-	recv(s->fd, tmpbuf, 90, 0);
-	if (!strncmp(s->header, tmpbuf, 14))
+	/*recv(s->fd, tmpbuf, 90, 0);
+	  if (!strncmp(s->header, tmpbuf, 14))
 		memcpy(buf+32692, tmpbuf+14, 76);
-	printf("SIZE: %d\n", ret);
-	if (ret > 0)
-		return ret;
+	*/
     return ret < 0 ? ff_neterrno() : ret;
 }
 
 static int etcp_write(URLContext *h, const uint8_t *buf, int size)
 {
     EtcpContext *s = h->priv_data;
-	uint8_t *frame;
-    int ret, sending;
-	frame = (uint8_t *) malloc(size+14);
-	memcpy(frame, s->header, 14);
-	memcpy(frame+14, buf, size);
+	uint8_t frame[1500], offset, more;
+	uint16_t sendSize;
+    int ret;
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
         ret = ff_network_wait_fd(s->fd, 1);
         if (ret < 0)
             return ret;
     }
-	sending = 0;
-	while(sending < size)
+	offset = 0;
+	while(1)
 	{
-		memcpy(frame, s->header, 14);
-		memcpy(frame + 14, buf + sending, (size < 1486) ? size: 1486);
-	    ret = sendto(s->fd, frame, (size < 1486) ? size+14 : 1500, 0, (struct sockaddr *)&s->addr, sizeof(s->addr));
+		more = 0x01;
+		if ((offset + 1)*controlSize > size)
+			more = 0x00;
+		sendSize = (more) ? controlSize : (size - offset * controlSize);
+		memcpy(frame, s->header, headerSize);
+		memcpy(frame+headerSize, &s->id, 1);
+		frame[15] = (sendSize & 0xff00) >> 8;
+		frame[16] = sendSize & 0x00ff;
+		frame[17] = offset;
+		frame[18] = more;
+		//printf("OFFSET: %d\nSIZE: %d\nControl: %d\n", offset, size, size - offset * controlSize);
+		memcpy(frame + headerSize + 5, buf + offset*controlSize, sendSize);
+	    ret = sendto(s->fd, frame, (more) ? 1500 : (size - offset * controlSize + headerSize), 0, (struct sockaddr *)&s->addr, sizeof(s->addr));
+		if (more != frame[18])
+			printf("EEEEEEEEEEEEEEEEEEEEEEEEEERRRRRRRRRRRRROOOOOOOOOOOOORRRRRRRRRRRRRRRRRRRRRRR\n");
+		//printf("SIZE: %x %x %d - %d\n", frame[15], frame[16], ((frame[15] << 8) | frame[16]), sendSize);
 		if (ret == -1)
 			perror ("sendto() failed");
-		sending+=1486;
+		if ((++offset)*controlSize > size)
+			break;
 	}
-	if ((size > 1468) && (sending - size > 0))
-	{
-		memcpy(frame, s->header, 14);
-		memcpy(frame + 14, buf + (sending - 1486), size - (sending - 1486));
-		ret = sendto(s->fd, frame, sending - size, 0, (struct sockaddr *)&s->addr, sizeof(s->addr));
-		if (ret == -1)
-			perror ("sendto() failed");
-	}
+	s->id = (s->id++)%256;
 	if (ret > 0)
 		return size;
     return ret < 0 ? ff_neterrno() : ret;
+	//cicle id
 }
 
 static int etcp_close(URLContext *h)
