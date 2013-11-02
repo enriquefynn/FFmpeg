@@ -149,7 +149,7 @@ static int etcp_read(URLContext *h, uint8_t *buf, int size)
 	while(1)
 	{
     	ret = recv(s->fd, tmpbuf, 1500, 0);
-		if (!memcmp(s->header, tmpbuf, headerSize))
+		if (!memcmp(s->header, tmpbuf+6, headerSize-8))
 		{
 			//printf("SIZE: %x %x %d\n", tmpbuf[15], tmpbuf[16], (tmpbuf[15] << 8) | tmpbuf[16]);
 
