@@ -43,49 +43,49 @@
 #define controlSize 1481
 
 typedef struct EtcpContext {
-    const AVClass *class;
-    struct sockaddr_ll addr;
+	const AVClass *class;
+	struct sockaddr_ll addr;
 	uint8_t header[headerSize];
 	uint8_t id;
-    int timeout;
-    int listen;
-    int type;
-    int fd;
+	int timeout;
+	int listen;
+	int type;
+	int fd;
 } EtcpContext;
 
 #define OFFSET(x) offsetof(EtcpContext, x)
 #define ED AV_OPT_FLAG_DECODING_PARAM|AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption etcp_options[] = {
-    { "listen",    "Open socket for listening",             OFFSET(listen),  AV_OPT_TYPE_INT,   { .i64 = 0 },                    0,       1, ED },
-    { "timeout",   "Timeout in ms",                         OFFSET(timeout), AV_OPT_TYPE_INT,   { .i64 = -1 },                  -1, INT_MAX, ED },
-    { "type",      "Socket type",                           OFFSET(type),    AV_OPT_TYPE_INT,   { .i64 = SOCK_STREAM },    INT_MIN, INT_MAX, ED, "type" },
-    { "stream",    "Stream (reliable stream-oriented)",     0,               AV_OPT_TYPE_CONST, { .i64 = SOCK_STREAM },    INT_MIN, INT_MAX, ED, "type" },
-    { "datagram",  "Datagram (unreliable packet-oriented)", 0,               AV_OPT_TYPE_CONST, { .i64 = SOCK_DGRAM },     INT_MIN, INT_MAX, ED, "type" },
-    { "seqpacket", "Seqpacket (reliable packet-oriented",   0,               AV_OPT_TYPE_CONST, { .i64 = SOCK_SEQPACKET }, INT_MIN, INT_MAX, ED, "type" },
-    { NULL }
+	{ "listen",	"Open socket for listening",			 OFFSET(listen),  AV_OPT_TYPE_INT,   { .i64 = 0 },					0,	   1, ED },
+	{ "timeout",   "Timeout in ms",						 OFFSET(timeout), AV_OPT_TYPE_INT,   { .i64 = -1 },				  -1, INT_MAX, ED },
+	{ "type",	  "Socket type",						   OFFSET(type),	AV_OPT_TYPE_INT,   { .i64 = SOCK_STREAM },	INT_MIN, INT_MAX, ED, "type" },
+	{ "stream",	"Stream (reliable stream-oriented)",	 0,			   AV_OPT_TYPE_CONST, { .i64 = SOCK_STREAM },	INT_MIN, INT_MAX, ED, "type" },
+	{ "datagram",  "Datagram (unreliable packet-oriented)", 0,			   AV_OPT_TYPE_CONST, { .i64 = SOCK_DGRAM },	 INT_MIN, INT_MAX, ED, "type" },
+	{ "seqpacket", "Seqpacket (reliable packet-oriented",   0,			   AV_OPT_TYPE_CONST, { .i64 = SOCK_SEQPACKET }, INT_MIN, INT_MAX, ED, "type" },
+	{ NULL }
 };
 
 static const AVClass etcp_class = {
-    .class_name = "etcp",
-    .item_name  = av_default_item_name,
-    .option     = etcp_options,
-    .version    = LIBAVUTIL_VERSION_INT,
+	.class_name = "etcp",
+	.item_name  = av_default_item_name,
+	.option	 = etcp_options,
+	.version	= LIBAVUTIL_VERSION_INT,
 };
 
 static int etcp_open(URLContext *h, const char *filename, int flags)
 {
-    EtcpContext *s = h->priv_data;
+	EtcpContext *s = h->priv_data;
 	//Init ID
 	s->id = 0x00;
-    int i, fd, ret;
+	int i, fd, ret;
 	char interface[40];
 	struct ifreq ifr;
-    av_strstart(filename, "etcp:", &filename);
-    s->addr.sll_family = AF_PACKET;
+	av_strstart(filename, "etcp:", &filename);
+	s->addr.sll_family = AF_PACKET;
 
-   	//Create raw socket 
+	//Create raw socket 
 	if ((fd = ff_socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)
-        return ff_neterrno();
+		return ff_neterrno();
 	//Append hash to header
 	sscanf(filename, "%02x%02x%02x%02x%02x%02x", (unsigned int *)&s->header[0], (unsigned int *)&s->header[1], (unsigned int *)&s->header[2], 
 												 (unsigned int *)&s->header[3], (unsigned int *)&s->header[4], (unsigned int *)&s->header[5]);
@@ -121,35 +121,35 @@ static int etcp_open(URLContext *h, const char *filename, int flags)
 		printf("%x", s->header[i]);
 	printf("\n");
 
-    s->fd = fd;
-    return 0;
+	s->fd = fd;
+	return 0;
 
 fail:
-    //if (s->listen && AVUNERROR(ret) != EADDRINUSE)
-    //    unlink(s->addr.sun_path);
-    if (fd >= 0)
-        closesocket(fd);
-    return ret;
+	//if (s->listen && AVUNERROR(ret) != EADDRINUSE)
+	//	unlink(s->addr.sun_path);
+	if (fd >= 0)
+		closesocket(fd);
+	return ret;
 }
 
 static int etcp_read(URLContext *h, uint8_t *buf, int size)
 {
 	//printf("SIZE: %d\n", size);
-    EtcpContext *s = h->priv_data;
-    int ret, i, nSize;
+	EtcpContext *s = h->priv_data;
+	int ret, i, nSize;
 	uint8_t tmpbuf[1500];
 	nSize = 0;
-    if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
-        ret = ff_network_wait_fd(s->fd, 0);
-        if (ret < 0)
-            return ret;
-    }
+	if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
+		ret = ff_network_wait_fd(s->fd, 0);
+		if (ret < 0)
+		return ret;
+	}
 	nSize = 0;
 	//printf("AQUI DE NOVO\n");
 	while(1)
 	{
-    	ret = recv(s->fd, tmpbuf, 1500, 0);
-		if (!memcmp(s->header, tmpbuf+6, headerSize-8))
+		ret = recv(s->fd, tmpbuf, 1500, 0);
+		if (!memcmp(s->header, tmpbuf, headerSize))
 		{
 			//printf("SIZE: %x %x %d\n", tmpbuf[15], tmpbuf[16], (tmpbuf[15] << 8) | tmpbuf[16]);
 
@@ -163,20 +163,20 @@ static int etcp_read(URLContext *h, uint8_t *buf, int size)
 	  if (!strncmp(s->header, tmpbuf, 14))
 		memcpy(buf+32692, tmpbuf+14, 76);
 	*/
-    return ret < 0 ? ff_neterrno() : ret;
+	return ret < 0 ? ff_neterrno() : ret;
 }
 
 static int etcp_write(URLContext *h, const uint8_t *buf, int size)
 {
-    EtcpContext *s = h->priv_data;
+	EtcpContext *s = h->priv_data;
 	uint8_t frame[1500], offset, more;
-	uint16_t sendSize;
-    int ret;
-    if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
-        ret = ff_network_wait_fd(s->fd, 1);
-        if (ret < 0)
-            return ret;
-    }
+	uint16_t sendSize, totalSend;
+	int ret;
+	if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
+		ret = ff_network_wait_fd(s->fd, 1);
+		if (ret < 0)
+			return ret;
+	}
 	offset = 0;
 	while(1)
 	{
@@ -192,9 +192,8 @@ static int etcp_write(URLContext *h, const uint8_t *buf, int size)
 		frame[18] = more;
 		//printf("OFFSET: %d\nSIZE: %d\nControl: %d\n", offset, size, size - offset * controlSize);
 		memcpy(frame + headerSize + 5, buf + offset*controlSize, sendSize);
-	    ret = sendto(s->fd, frame, (more) ? 1500 : (size - offset * controlSize + headerSize), 0, (struct sockaddr *)&s->addr, sizeof(s->addr));
-		if (more != frame[18])
-			printf("EEEEEEEEEEEEEEEEEEEEEEEEEERRRRRRRRRRRRROOOOOOOOOOOOORRRRRRRRRRRRRRRRRRRRRRR\n");
+		ret = sendto(s->fd, frame, (more) ? 1500 : (size - offset * controlSize + headerSize + 5), 0, (struct sockaddr *)&s->addr, sizeof(s->addr));
+		totalSend+=ret;
 		//printf("SIZE: %x %x %d - %d\n", frame[15], frame[16], ((frame[15] << 8) | frame[16]), sendSize);
 		if (ret == -1)
 			perror ("sendto() failed");
@@ -203,34 +202,34 @@ static int etcp_write(URLContext *h, const uint8_t *buf, int size)
 	}
 	s->id = (s->id++)%256;
 	if (ret > 0)
-		return size;
-    return ret < 0 ? ff_neterrno() : ret;
+		return totalSend;
+	return ret < 0 ? ff_neterrno() : ret;
 	//cicle id
 }
 
 static int etcp_close(URLContext *h)
 {
-    EtcpContext *s = h->priv_data;
-    //if (s->listen)
-    //    unlink(s->addr.sun_path);
-    closesocket(s->fd);
-    return 0;
+	EtcpContext *s = h->priv_data;
+	//if (s->listen)
+	//	unlink(s->addr.sun_path);
+	closesocket(s->fd);
+	return 0;
 }
 
 static int etcp_get_file_handle(URLContext *h)
 {
-    EtcpContext *s = h->priv_data;
-    return s->fd;
+	EtcpContext *s = h->priv_data;
+	return s->fd;
 }
 
 URLProtocol ff_etcp_protocol = {
-    .name                = "etcp",
-    .url_open            = etcp_open,
-    .url_read            = etcp_read,
-    .url_write           = etcp_write,
-    .url_close           = etcp_close,
-    .url_get_file_handle = etcp_get_file_handle,
-    .priv_data_size      = sizeof(EtcpContext),
-    .priv_data_class     = &etcp_class,
-    .flags               = URL_PROTOCOL_FLAG_NETWORK,
+	.name				= "etcp",
+	.url_open			= etcp_open,
+	.url_read			= etcp_read,
+	.url_write		   = etcp_write,
+	.url_close		   = etcp_close,
+	.url_get_file_handle = etcp_get_file_handle,
+	.priv_data_size	  = sizeof(EtcpContext),
+	.priv_data_class	 = &etcp_class,
+	.flags			   = URL_PROTOCOL_FLAG_NETWORK,
 };
