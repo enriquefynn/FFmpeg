@@ -114,7 +114,7 @@ static int etcp_open(URLContext *h, const char *filename, int flags)
 	memcpy (s->addr.sll_addr, s->header + 6, 6);
 	s->addr.sll_halen = htons(6);
 	//Ethertype
-	s->header[12] = 0x18;
+	s->header[12] = 0x08;
 	s->header[13] = 0x80;
 	printf("HASH: ");
 	for (i = 0; i < headerSize; ++i)
@@ -149,7 +149,7 @@ static int etcp_read(URLContext *h, uint8_t *buf, int size)
 	while(1)
 	{
 		ret = recv(s->fd, tmpbuf, 1500, 0);
-		if (!memcmp(s->header, tmpbuf, headerSize))
+		if (!memcmp(s->header, tmpbuf+6, headerSize-8))
 		{
 			//printf("SIZE: %x %x %d\n", tmpbuf[15], tmpbuf[16], (tmpbuf[15] << 8) | tmpbuf[16]);
 
