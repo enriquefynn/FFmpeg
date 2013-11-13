@@ -75,11 +75,11 @@ static const AVClass etcp_class = {
 static int etcp_open(URLContext *h, const char *filename, int flags)
 {
 	EtcpContext *s = h->priv_data;
-	//Init ID
-	s->id = 0x00;
 	int i, fd, ret;
 	char interface[40];
 	struct ifreq ifr;
+	//Init ID
+	s->id = 0x00;
 	av_strstart(filename, "etcp:", &filename);
 	s->addr.sll_family = AF_PACKET;
 
@@ -134,10 +134,10 @@ fail:
 
 static int etcp_read(URLContext *h, uint8_t *buf, int size)
 {
+	int ret, nSize;
+	uint8_t tmpbuf[1500];
 	//printf("SIZE: %d\n", size);
 	EtcpContext *s = h->priv_data;
-	int ret, i, nSize;
-	uint8_t tmpbuf[1500];
 	nSize = 0;
 	if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
 		ret = ff_network_wait_fd(s->fd, 0);
