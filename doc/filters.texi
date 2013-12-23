@@ -198,7 +198,7 @@ In a complete filterchain all the unlabelled filter input and output
 pads must be connected. A filtergraph is considered valid if all the
 filter input and output pads of all the filterchains are connected.
 
-Libavfilter will automatically insert scale filters where format
+Libavfilter will automatically insert @ref{scale} filters where format
 conversion is required. It is possible to specify swscale flags
 for those automatically inserted scalers by prepending
 @code{sws_flags=@var{flags};}
@@ -371,7 +371,7 @@ smaller than number of channels all remaining channels will not be delayed.
 Delay first channel by 1.5 seconds, the third channel by 0.5 seconds and leave
 the second channel (and any other channels that may be present) unchanged.
 @example
-adelay=1500:0:500
+adelay=1500|0|500
 @end example
 @end itemize
 
@@ -432,6 +432,70 @@ aecho=0.8:0.9:1000:0.3
 Same as above but with one more mountain:
 @example
 aecho=0.8:0.9:1000|1800:0.3|0.25
+@end example
+@end itemize
+
+@section aeval
+
+Modify an audio signal according to the specified expressions.
+
+This filter accepts one or more expressions (one for each channel),
+which are evaluated and used to modify a corresponding audio signal.
+
+This filter accepts the following options:
+
+@table @option
+@item exprs
+Set the '|'-separated expressions list for each separate channel. If
+the number of input channels is greater than the number of
+expressions, the last specified expression is used for the remaining
+output channels.
+
+@item channel_layout, c
+Set output channel layout. If not specified, the channel layout is
+specified by the number of expressions. If set to @samp{same}, it will
+use by default the same input channel layout.
+@end table
+
+Each expression in @var{exprs} can contain the following constants and functions:
+
+@table @option
+@item ch
+channel number of the current expression
+
+@item n
+number of the evaluated sample, starting from 0
+
+@item s
+sample rate
+
+@item t
+time of the evaluated sample expressed in seconds
+
+@item nb_in_channels
+@item nb_out_channels
+input and output number of channels
+
+@item val(CH)
+the value of input channel with number @var{CH}
+@end table
+
+Note: this filter is slow. For faster processing you should use a
+dedicated filter.
+
+@subsection Examples
+
+@itemize
+@item
+Half volume:
+@example
+aeval=val(ch)/2:c=same
+@end example
+
+@item
+Invert phase of the second channel:
+@example
+eval=val(0)|-val(1)
 @end example
 @end itemize
 
@@ -1896,7 +1960,8 @@ This source accepts the following options:
 @item exprs
 Set the '|'-separated expressions list for each separate channel. In case the
 @option{channel_layout} option is not specified, the selected channel layout
-depends on the number of provided expressions.
+depends on the number of provided expressions. Otherwise the last
+specified expression is applied to the remaining output channels.
 
 @item channel_layout, c
 Set the channel layout. The number of channels in the specified layout
@@ -2411,6 +2476,24 @@ blend=all_expr='A*(if(gte(T,10),1,T/10))+B*(1-(if(gte(T,10),1,T/10)))'
 Apply 1x1 checkerboard effect:
 @example
 blend=all_expr='if(eq(mod(X,2),mod(Y,2)),A,B)'
+@end example
+
+@item
+Apply uncover left effect:
+@example
+blend=all_expr='if(gte(N*SW+X,W),A,B)'
+@end example
+
+@item
+Apply uncover down effect:
+@example
+blend=all_expr='if(gte(Y-N*SH,0),A,B)'
+@end example
+
+@item
+Apply uncover up-left effect:
+@example
+blend=all_expr='if(gte(T*SH*40+Y,H)*gte((T*40*SW+X)*W/H,W),A,B)'
 @end example
 @end itemize
 
@@ -3772,6 +3855,32 @@ ffmpeg -i video.avi -filter_complex 'extractplanes=y+u+v[y][u][v]' -map '[y]' y.
 @end example
 @end itemize
 
+@section elbg
+
+Apply a posterize effect using the ELBG (Enhanced LBG) algorithm.
+
+For each input image, the filter will compute the optimal mapping from
+the input to the output given the codebook length, that is the number
+of distinct output colors.
+
+This filter accepts the following options.
+
+@table @option
+@item codebook_length, l
+Set codebook length. The value must be a positive integer, and
+represents the number of distinct output colors. Default value is 256.
+
+@item nb_steps, n
+Set the maximum number of iterations to apply for computing the optimal
+mapping. The higher the value the better the result and the higher the
+computation time. Default value is 1.
+
+@item seed, s
+Set a random seed, must be an integer included between 0 and
+UINT32_MAX. If not specified, or if explicitly set to -1, the filter
+will try to use a good random seed on a best effort basis.
+@end table
+
 @section fade
 
 Apply fade-in/out effect to input video.
@@ -3791,7 +3900,8 @@ effect. Default is 0.
 @item nb_frames, n
 The number of frames for which the fade effect has to last. At the end of the
 fade-in effect the output video will have the same intensity as the input video,
-at the end of the fade-out transition the output video will be completely black.
+at the end of the fade-out transition the output video will be filled with the
+selected @option{color}.
 Default is 25.
 
 @item alpha
@@ -3806,8 +3916,12 @@ whichever comes last.  Default is 0.
 @item duration, d
 The number of seconds for which the fade effect has to last. At the end of the
 fade-in effect the output video will have the same intensity as the input video,
-at the end of the fade-out transition the output video will be completely black.
+at the end of the fade-out transition the output video will be filled with the
+selected @option{color}.
 If both duration and nb_frames are specified, duration is used. Default is 0.
+
+@item color, c
+Specify the color of the fade. Default is "black".
 @end table
 
 @subsection Examples
@@ -3838,9 +3952,9 @@ fade=in:0:25, fade=out:975:25
 @end example
 
 @item
-Make first 5 frames black, then fade in from frame 5-24:
+Make first 5 frames yellow, then fade in from frame 5-24:
 @example
-fade=in:5:20
+fade=in:5:20:color=yellow
 @end example
 
 @item
@@ -4265,6 +4379,7 @@ format=pix_fmts=yuv420p|yuv444p|yuv410p
 @end example
 @end itemize
 
+@anchor{fps}
 @section fps
 
 Convert the video to specified constant frame rate by duplicating or dropping
@@ -6422,9 +6537,11 @@ The main purpose of setting @option{mp} to a chroma plane is to reduce CPU
 load and make pullup usable in realtime on slow machines.
 @end table
 
-For example to inverse telecined NTSC input:
+For best results (without duplicated frames in the output file) it is
+necessary to change the output frame rate. For example, to inverse
+telecine NTSC input:
 @example
-pullup,fps=24000/1001
+ffmpeg -i input -vf pullup -r 24000/1001 ...
 @end example
 
 @section removelogo
@@ -6620,6 +6737,7 @@ must be a value in the 0.1-100.0 range.
 Each chroma option value, if not explicitly specified, is set to the
 corresponding luma option value.
 
+@anchor{scale}
 @section scale
 
 Scale (resize) the input video, using the libswscale library.
@@ -6802,7 +6920,12 @@ input display aspect ratio. Calculated from @code{(iw / ih) * sar}.
 
 @item hsub
 @item vsub
-horizontal and vertical chroma subsample values. For example for the
+horizontal and vertical input chroma subsample values. For example for the
+pixel format "yuv422p" @var{hsub} is 2 and @var{vsub} is 1.
+
+@item ohsub
+@item ovsub
+horizontal and vertical output chroma subsample values. For example for the
 pixel format "yuv422p" @var{hsub} is 2 and @var{vsub} is 1.
 @end table
 
@@ -6950,6 +7073,31 @@ Set the maximum integer value to use for expressing numerator and
 denominator when reducing the expressed aspect ratio to a rational.
 Default value is @code{100}.
 
+@end table
+
+The parameter @var{sar} is an expression containing
+the following constants:
+
+@table @option
+@item E, PI, PHI
+the corresponding mathematical approximated values for e
+(euler number), pi (greek PI), phi (golden ratio)
+
+@item w, h
+the input width and height
+
+@item a
+same as @var{w} / @var{h}
+
+@item sar
+input sample aspect ratio
+
+@item dar
+input display aspect ratio, it is the same as (@var{w} / @var{h}) * @var{sar}
+
+@item hsub, vsub
+horizontal and vertical chroma subsample values. For example for the
+pixel format "yuv422p" @var{hsub} is 2 and @var{vsub} is 1.
 @end table
 
 @subsection Examples
@@ -9689,6 +9837,23 @@ Set saturation modifier for displayed colors. Negative values provide
 alternative color scheme. @code{0} is no saturation at all.
 Saturation must be in [-10.0, 10.0] range.
 Default value is @code{1}.
+
+@item win_func
+Set window function.
+
+It accepts the following values:
+@table @samp
+@item none
+No samples pre-processing (do not expect this to be faster)
+@item hann
+Hann window
+@item hamming
+Hamming window
+@item blackman
+Blackman window
+@end table
+
+Default value is @code{hann}.
 @end table
 
 The usage is very similar to the showwaves filter; see the examples in that

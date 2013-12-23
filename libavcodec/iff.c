@@ -25,6 +25,8 @@
  * IFF ACBM/DEEP/ILBM/PBM bitmap decoder
  */
 
+#include <stdint.h>
+
 #include "libavutil/imgutils.h"
 #include "bytestream.h"
 #include "avcodec.h"
@@ -318,6 +320,16 @@ static int extract_header(AVCodecContext *const avctx,
     return 0;
 }
 
+static av_cold int decode_end(AVCodecContext *avctx)
+{
+    IffContext *s = avctx->priv_data;
+    av_frame_free(&s->frame);
+    av_freep(&s->planebuf);
+    av_freep(&s->ham_buf);
+    av_freep(&s->ham_palbuf);
+    return 0;
+}
+
 static av_cold int decode_init(AVCodecContext *avctx)
 {
     IffContext *s = avctx->priv_data;
@@ -360,8 +372,10 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     s->bpp = avctx->bits_per_coded_sample;
     s->frame = av_frame_alloc();
-    if (!s->frame)
+    if (!s->frame) {
+        decode_end(avctx);
         return AVERROR(ENOMEM);
+    }
 
     if ((err = extract_header(avctx, NULL)) < 0)
         return err;
@@ -484,6 +498,10 @@ static int decode_byterun(uint8_t *dst, int dst_size,
             continue;
         }
         x += length;
+    }
+    if (x < dst_size) {
+        av_log(NULL, AV_LOG_WARNING, "decode_byterun ended before plane size\n");
+        memset(dst+x, 0, dst_size - x);
     }
     return buf - buf_start;
 }
@@ -856,16 +874,6 @@ static int decode_frame(AVCodecContext *avctx,
     *got_frame = 1;
 
     return buf_size;
-}
-
-static av_cold int decode_end(AVCodecContext *avctx)
-{
-    IffContext *s = avctx->priv_data;
-    av_frame_free(&s->frame);
-    av_freep(&s->planebuf);
-    av_freep(&s->ham_buf);
-    av_freep(&s->ham_palbuf);
-    return 0;
 }
 
 #if CONFIG_IFF_ILBM_DECODER

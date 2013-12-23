@@ -153,6 +153,7 @@ static AVIOContext * wtvfile_open_sector(int first_sector, uint64_t length, int 
     AVIOContext *pb;
     WtvFile *wf;
     uint8_t *buffer;
+    int64_t size;
 
     if (seek_by_sector(s->pb, first_sector, 0) < 0)
         return NULL;
@@ -205,7 +206,8 @@ static AVIOContext * wtvfile_open_sector(int first_sector, uint64_t length, int 
         return NULL;
     }
 
-    if ((int64_t)wf->sectors[wf->nb_sectors - 1] << WTV_SECTOR_BITS > avio_tell(s->pb))
+    size = avio_size(s->pb);
+    if (size >= 0 && (int64_t)wf->sectors[wf->nb_sectors - 1] << WTV_SECTOR_BITS > size)
         av_log(s, AV_LOG_WARNING, "truncated file\n");
 
     /* check length */
@@ -506,7 +508,7 @@ static void get_tag(AVFormatContext *s, AVIOContext *pb, const char *key, int ty
         else
             snprintf(buf, buf_size, "%"PRIi64, num);
     } else if (type == 5 && length == 2) {
-        snprintf(buf, buf_size, "%"PRIi16, avio_rl16(pb));
+        snprintf(buf, buf_size, "%u", avio_rl16(pb));
     } else if (type == 6 && length == 16) {
         ff_asf_guid guid;
         avio_read(pb, guid, 16);

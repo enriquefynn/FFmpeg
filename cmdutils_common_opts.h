@@ -4,6 +4,7 @@
     { "help"       , OPT_EXIT, {.func_arg = show_help},         "show help", "topic" },
     { "-help"      , OPT_EXIT, {.func_arg = show_help},         "show help", "topic" },
     { "version"    , OPT_EXIT, {.func_arg = show_version},      "show version" },
+    { "buildconf"  , OPT_EXIT, {.func_arg = show_buildconf},    "show build configuration" },
     { "formats"    , OPT_EXIT, {.func_arg = show_formats  },    "show available formats" },
     { "codecs"     , OPT_EXIT, {.func_arg = show_codecs   },    "show available codecs" },
     { "decoders"   , OPT_EXIT, {.func_arg = show_decoders },    "show available decoders" },
@@ -21,5 +22,6 @@
     { "max_alloc"  , HAS_ARG,  {.func_arg = opt_max_alloc},     "set maximum size of a single allocated block", "bytes" },
     { "cpuflags"   , HAS_ARG | OPT_EXPERT, { .func_arg = opt_cpuflags }, "force specific cpu flags", "flags" },
 #if CONFIG_OPENCL
+    { "opencl_bench", OPT_EXIT, {.func_arg = opt_opencl_bench}, "run benchmark on all OpenCL devices and show results" },
     { "opencl_options", HAS_ARG, {.func_arg = opt_opencl},      "set OpenCL environment options" },
 #endif

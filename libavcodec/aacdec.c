@@ -74,6 +74,7 @@
  * N                    SinuSoidal Coding (Transient, Sinusoid, Noise)
  * Y                    Parametric Stereo
  * N                    Direct Stream Transfer
+ * Y                    Enhanced AAC Low Delay (ER AAC ELD)
  *
  * Note: - HE AAC v1 comprises LC AAC with Spectral Band Replication.
  *       - HE AAC v2 comprises LC AAC with Spectral Band Replication and
@@ -104,6 +105,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
 
 #if ARCH_ARM
@@ -532,6 +534,25 @@ static int set_default_channel_config(AVCodecContext *avctx,
     *tags = tags_per_config[channel_config];
     memcpy(layout_map, aac_channel_layout_map[channel_config - 1],
            *tags * sizeof(*layout_map));
+
+    /*
+     * AAC specification has 7.1(wide) as a default layout for 8-channel streams.
+     * However, at least Nero AAC encoder encodes 7.1 streams using the default
+     * channel config 7, mapping the side channels of the original audio stream
+     * to the second AAC_CHANNEL_FRONT pair in the AAC stream. Similarly, e.g. FAAD
+     * decodes the second AAC_CHANNEL_FRONT pair as side channels, therefore decoding
+     * the incorrect streams as if they were correct (and as the encoder intended).
+     *
+     * As actual intended 7.1(wide) streams are very rare, default to assuming a
+     * 7.1 layout was intended.
+     */
+    if (channel_config == 7 && avctx->strict_std_compliance < FF_COMPLIANCE_STRICT) {
+        av_log(avctx, AV_LOG_INFO, "Assuming an incorrectly encoded 7.1 channel layout"
+               " instead of a spec-compliant 7.1(wide) layout, use -strict %d to decode"
+               " according to the specification instead.\n", FF_COMPLIANCE_STRICT);
+        layout_map[2][2] = AAC_CHANNEL_SIDE;
+    }
+
     return 0;
 }
 
@@ -2262,10 +2283,12 @@ static int decode_extension_payload(AACContext *ac, GetBitContext *gb, int cnt,
         } else if (ac->oc[1].m4ac.ps == -1 && ac->oc[1].status < OC_LOCKED && ac->avctx->channels == 1) {
             ac->oc[1].m4ac.sbr = 1;
             ac->oc[1].m4ac.ps = 1;
+            ac->avctx->profile = FF_PROFILE_AAC_HE_V2;
             output_configure(ac, ac->oc[1].layout_map, ac->oc[1].layout_map_tags,
                              ac->oc[1].status, 1);
         } else {
             ac->oc[1].m4ac.sbr = 1;
+            ac->avctx->profile = FF_PROFILE_AAC_HE;
         }
         res = ff_decode_sbr_extension(ac, &che->sbr, gb, crc_flag, cnt, elem_type);
         break;
@@ -2533,7 +2556,7 @@ static void imdct_and_windowing_eld(AACContext *ac, SingleChannelElement *sce)
     // Inverse transform, mapped to the conventional IMDCT by
     // Chivukula, R.K.; Reznik, Y.A.; Devarajan, V.,
     // "Efficient algorithms for MPEG-4 AAC-ELD, AAC-LD and AAC-LC filterbanks,"
-    // Audio, Language and Image Processing, 2008. ICALIP 2008. International Conference on
+    // International Conference on Audio, Language and Image Processing, ICALIP 2008.
     // URL: http://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4590245&isnumber=4589950
     for (i = 0; i < n2; i+=2) {
         float temp;
@@ -2800,6 +2823,10 @@ static int aac_decode_er_frame(AVCodecContext *avctx, void *data,
     if ((err = frame_configure_elements(avctx)) < 0)
         return err;
 
+    // The FF_PROFILE_AAC_* defines are all object_type - 1
+    // This may lead to an undefined profile being signaled
+    ac->avctx->profile = ac->oc[1].m4ac.object_type - 1;
+
     ac->tags_mapped = 0;
 
     if (chan_config < 0 || chan_config >= 8) {
@@ -2868,6 +2895,10 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
 
     if ((err = frame_configure_elements(avctx)) < 0)
         goto fail;
+
+    // The FF_PROFILE_AAC_* defines are all object_type - 1
+    // This may lead to an undefined profile being signaled
+    ac->avctx->profile = ac->oc[1].m4ac.object_type - 1;
 
     ac->tags_mapped = 0;
     // parse
